@@ -18,6 +18,9 @@ InfraEnv's Agents that are affected by the change. Rather than reboot all of
 them with the newly-generated ISO, only those hosts that are affected by the
 new or modified NMStateConfig should be rebooted.
 
+It is assumed that in all cases, Agents that have started installing will not
+be restarted due to an ISO change.
+
 ## Motivation
 
 If there are 500 NMStateConfigs and 500 Agents all related to the same
@@ -45,19 +48,17 @@ using obsolete artifacts will have:
 
 ### assisted-service InfraEnv controller
 
-The InfraEnv ISO URL will change when the ISO contents change. This will make
-it obvious to an API user that they have booted a host from an obsolete ISO,
-because the URLs won't match. A side benefit of ensuring that the ISO URL
-uniquely identifies the resource's contents, is that pull-through caches will
-have an easy time understanding when an file is no longer relevant.
+The InfraEnv ISO URL changes when the ISO contents change. This makes it
+obvious to an API user that they have booted a host from an obsolete ISO,
+because the URLs won't match.
 
 When assisted-service creates an ISO, it will capture and include in the ISO:
 * the name, namespace, UID, and generation of the InfraEnv
 * the name, namespace, UID, and generation of each NMStateConfig
 
 At runtime, those resource identifiers for the InfraEnv and the NMStateConfig
-it used will be passed by the agent to assisted-service and compared against
-the current resource generations to determine if they are obsolete.
+it used will be passed by the agent to assisted-service and added to the
+Agent's Status.
 
 ### assisted-service Agent controller
 
@@ -66,9 +67,10 @@ above-described reference details for:
 * The InfraEnv
 * The NMStateConfig it utilized during its boot
 
-If those details indicate that any of the referenced resources have changed,
-then the controller will add a label to the Agent resource indicating such. It
-will also add a reference to each resource to an array in the Agent's Status.
+Upon comparing those references to the resources that currently exist, if any
+of the referenced resources have changed, then the controller will add a label
+to the Agent resource indicating such. It will also add a reference to each
+obsolete resource to an array in the Agent's Status.
 
 ### Bare Metal Agent Controller
 
@@ -95,6 +97,35 @@ to have the obsolete artifact label and restart them with a fresh ISO.
 ### Implementation Details/Notes/Constraints [optional]
 
 * Any Agent that has already started provisioning will be exempt from rebooting.
+* Similar to current behavior, a new ISO URL will not be used until a quiet
+  period has elapsed (currently 1 minute). This ensures that if multiple
+  changes are happening in serial, for example many NMStateConfig resources are
+  getting created or modified, that there will not be continuous churn of
+  rebooting hosts with each change.
+
+#### Label Algorithm
+
+Given:
+* The Agent's Status includes a reference to the InfraEnv resource that was used to create its ISO.
+* The Agent's Status includes an optional reference to a NMStateConfig resource that was used to create the network config the agent used.
+
+IF:
+
+* The existing InfraEnv generation or UID don't match the corresponding values reported in the Agent's Status.
+
+OR
+
+* The existing NMStateConfig generation or UID don't match the corresponding values reported in the Agent's Status, or the NMStateConfig does not exist.
+
+THEN
+
+* Ensure that a label exists on the Agent signifying that it was booted using obsolete artifacts.
+* Ensure that the obsolete InfraEnv and/or NMStateConfig are listed in an array of obsolete resource references in the Agent status.
+
+ELSE
+
+* Ensure that a label **does not exist** on the Agent signifying that it was booted using obsolete artifacts.
+* Ensure that the Agent Status does not have an array of references to obsolete resources.
 
 ### Risks and Mitigations
 
@@ -104,7 +135,6 @@ to have the obsolete artifact label and restart them with a fresh ISO.
 
 ### Open Questions
 
-* Should the BMAC delete an Agent after it reboots the corresponding host?
 * What should the label's key and value be?
 * How exactly would the resource references get embedded into the ISO, and how
   would the Agent communicate those back to assisted-service?
@@ -114,6 +144,14 @@ to have the obsolete artifact label and restart them with a fresh ISO.
 
 ### Test Plan
 
+Test Cases:
+* Create InfraEnv, add NMStateConfigs one by one.
+* Create InfraEnv, add invalid NMStateConfig, fix NMStateConfig
+* Update NMStateConfig for existing Agent
+* Have multiple NMStateConfigs for single Agent
+* Remove NMStateConfig for existing Agent
+* Add NMStateConfig after Agent is already up
+* Create InfraEnv and NMStateConfig, wait for the Agent to be up, then update proxy in InfraEnv
 
 ## Drawbacks
 
