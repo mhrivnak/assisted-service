@@ -74,12 +74,63 @@ obsolete resource to an array in the Agent's Status.
 
 ### Bare Metal Agent Controller
 
-The Bare Metal Agent Controller will watch for Agents to have that label and
-reboot the corresponding BareMetalHost with the latest ISO URL.
+The Bare Metal Agent Controller will watch for Agents to have that label.
+
+If the Agent's NMStateConfig is obsolete, then it will reboot the corresponding
+BareMetalHost with the latest ISO URL.
+
+Else if the Agent's InfraEnv is obsolete, and the Agent does not have an associated
+NMStateConfig, then the BMAC will reboot the host only if finds a new
+NMStateConfig that matches the Agent.
 
 The BMAC will also watch for the InfraEnv URL to change, and if there are any
 BareMetalHosts that were booted with an obsolete URL but do not yet have an
 Agent resource, those BareMetalHosts will be rebooted with the latest ISO URL.
+
+ +---------------------------+
+ |                           |
+ |   Agent has the label?    |
+ |                           |
+ +----+-----------+----------+
+      |           |
+      v           v
+ +----+--+    +---+---+      +-------------+
+ |       |    |       |      |             |
+ |  Yes  |    |  No   +----->+  No action  |
+ |       |    |       |      |             |
+ +---+---+    +-------+      +-------------+
+     |
+     v
+ +---+----------------+
+ |                    |
+ |  Agent Status      |
+ |  cites an obsolete |
+ |  NMStateConfig?    |
+ |                    |
+ +---+------------+---+
+     |            |
+     v            v
+ +---+---+    +---+---+
+ |       |    |       |
+ |  Yes  |    |  No   |
+ |       |    |       |
+ +---+---+    +---+---+
+     |            |
+     |            v
+     |         +--+-------------------------+
+     |         |                            |
+     |         |  Is there a NMStateConfig  |
+     |         |  that matches the Agent?   |
+     |         |                            |
+     |         +-----------+------------+---+
+     |                     |            |
+     |                     v            v
++----v-----+           +---+---+    +---+---+     +-------------+
+|          |           |       |    |       |     |             |
+|  Reboot  +<----------+  Yes  |    |  No   +---->+  No action  |
+|          |           |       |    |       |     |             |
++----------+           +-------+    +-------+     +-------------+
+
 
 ### User Stories
 
